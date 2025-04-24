@@ -1,8 +1,8 @@
-project_name: "cloud_function_project"
+project_name: "conversational-analytics-explore-evaluator"
 
-application: cloud_function_project {
-  label: "Cloud Function Project"
-  url: "http://localhost:8080/index.html"
+application: conversational_analytics_explore_evaluator {
+  label: "Conversational Analytics Explore Evaluator"
+  url: "https://joeymbryan.github.io/converstional-analytics-explore-evaluator/index.html"
   # File containing the code
   file: "bundle.js"
   entitlements: {

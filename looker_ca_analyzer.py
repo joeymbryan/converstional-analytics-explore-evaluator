@@ -364,7 +364,23 @@ def analyze_lookml(explore_name, model_name=None):
             explore_name=explore_name,
             fields="name,label,description,hidden,group_label,view_name,joins,fields"
         )
-        explore_definition_json = json.dumps(explore_details, default=vars)
+        
+        # Convert explore_details to a dictionary before serializing
+        explore_dict = {
+            "name": explore_details.name,
+            "label": explore_details.label,
+            "description": explore_details.description,
+            "hidden": explore_details.hidden,
+            "group_label": explore_details.group_label,
+            "view_name": explore_details.view_name,
+            "joins": [{"name": j.name, "type": j.type, "relationship": j.relationship, "sql_on": j.sql_on} for j in explore_details.joins] if explore_details.joins else [],
+            "fields": {
+                "dimensions": [{"name": f.name, "label": f.label, "description": f.description} for f in explore_details.fields.dimensions] if explore_details.fields.dimensions else [],
+                "measures": [{"name": f.name, "label": f.label, "description": f.description} for f in explore_details.fields.measures] if explore_details.fields.measures else [],
+                "filters": [{"name": f.name, "label": f.label, "description": f.description} for f in explore_details.fields.filters] if explore_details.fields.filters else []
+            }
+        }
+        explore_definition_json = json.dumps(explore_dict)
         
         # Get field usage history
         history_scores = fetch_and_process_history(sdk, SOURCE_WEIGHTS, DEFAULT_WEIGHT)

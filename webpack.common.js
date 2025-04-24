@@ -24,6 +24,10 @@ module.exports = {
           },
         },
       },
+      {
+        test: /\.css$/,
+        use: ['style-loader', 'css-loader'],
+      },
     ],
   },
   resolve: {
@@ -40,7 +44,9 @@ module.exports = {
     library: {
       type: 'umd',
       name: 'extension',
+      export: 'default',
     },
+    globalObject: 'this',
   },
   plugins: [
     new HtmlWebpackPlugin({

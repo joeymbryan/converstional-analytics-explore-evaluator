@@ -1,7 +1,7 @@
 project_name: "conversational-analytics-explore-evaluator"
 
-application: explorewise {
-  label: "ExploreWise"
+application: ca_explore_evaluator {
+  label: "CA Explore Evaluator"
   url: "https://joeymbryan.github.io/converstional-analytics-explore-evaluator/bundle.js"
   # File containing the code
   file: "bundle.js"

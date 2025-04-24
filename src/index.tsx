@@ -8,11 +8,15 @@ if (!rootElement) {
   throw new Error('No root element found')
 }
 
-ReactDOM.render(
+const Extension = () => (
   <React.StrictMode>
     <ExtensionProvider>
       <App />
     </ExtensionProvider>
-  </React.StrictMode>,
-  rootElement
-) 
+  </React.StrictMode>
+)
+
+ReactDOM.render(<Extension />, rootElement)
+
+// Export the extension for Looker
+export default Extension 

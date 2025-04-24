@@ -37,6 +37,10 @@ module.exports = {
     filename: 'bundle.js',
     path: path.join(__dirname, 'dist'),
     publicPath: '/converstional-analytics-explore-evaluator/',
+    library: {
+      type: 'umd',
+      name: 'extension',
+    },
   },
   plugins: [
     new HtmlWebpackPlugin({

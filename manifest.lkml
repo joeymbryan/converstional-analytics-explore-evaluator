@@ -2,7 +2,7 @@ project_name: "conversational-analytics-explore-evaluator"
 
 application: ca_explore_evaluator {
   label: "CA Explore Evaluator"
-  url: "https://joeymbryan.github.io/converstional-analytics-explore-evaluator/index.html"
+  url: "https://joeymbryan.github.io/converstional-analytics-explore-evaluator/bundle.js"
   # File containing the code
   file: "bundle.js"
   entitlements: {

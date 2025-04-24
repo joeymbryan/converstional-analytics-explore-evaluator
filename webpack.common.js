@@ -36,12 +36,13 @@ module.exports = {
   output: {
     filename: 'bundle.js',
     path: path.join(__dirname, 'dist'),
-    publicPath: '/',
+    publicPath: '/converstional-analytics-explore-evaluator/',
   },
   plugins: [
     new HtmlWebpackPlugin({
       template: './public/index.html',
       filename: 'index.html',
+      inject: true,
     }),
   ],
 } 

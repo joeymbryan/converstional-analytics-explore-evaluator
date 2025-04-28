@@ -1,17 +1,33 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
-import { ExtensionProvider } from '@looker/extension-sdk-react'
+import { ExtensionProvider, ExtensionProviderProps } from '@looker/extension-sdk-react'
 import { App } from './App'
 import './index.css'
 
-const rootElement = document.createElement('div')
-rootElement.id = 'root'
-document.body.appendChild(rootElement)
+const initialize = () => {
+  const root = document.createElement('div')
+  root.id = 'root'
+  document.body.appendChild(root)
+  
+  const extensionProviderProps: ExtensionProviderProps = {
+    loadingComponent: <div>Loading ExploreWise...</div>,
+    requiredLookerVersion: '>=22.0.0',
+    onInitializeError: (error) => {
+      console.error('Extension initialization error:', error)
+      return <div>Error initializing extension: {error.message}</div>
+    }
+  }
 
-const Extension = () => (
-  <ExtensionProvider>
-    <App />
-  </ExtensionProvider>
-)
+  ReactDOM.render(
+    <ExtensionProvider {...extensionProviderProps}>
+      <App />
+    </ExtensionProvider>,
+    root
+  )
+}
 
-ReactDOM.render(<Extension />, rootElement) 
+// Initialize the extension
+initialize()
+
+// Export the initialization function for Looker
+export default initialize 

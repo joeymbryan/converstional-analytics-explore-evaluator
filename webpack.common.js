@@ -40,7 +40,9 @@ module.exports = {
   output: {
     filename: 'bundle.js',
     path: path.join(__dirname, 'dist'),
-    publicPath: '/converstional-analytics-explore-evaluator/',
+    publicPath: process.env.NODE_ENV === 'production' 
+      ? '/conversational-analytics-explore-evaluator/'
+      : '/',
     library: {
       type: 'umd',
       name: 'extension',

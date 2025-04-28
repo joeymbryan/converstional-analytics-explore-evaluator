@@ -1,5 +1,5 @@
 {
-  "name": "cloud_function_project",
+  "name": "conversational-analytics-explore-evaluator",
   "version": "1.0.0",
   "description": "Looker Extension Project",
   "main": "dist/bundle.js",
@@ -7,10 +7,12 @@
     "analyze": "export ANALYZE_MODE=static && npm run build",
     "build": "export BABEL_ENV=build && webpack --config webpack.prod.js",
     "clean": "rm -rf dist",
-    "develop": "webpack serve --hot --port 8080 --config webpack.develop.js",
+    "develop": "npm run generate-manifest:dev && webpack serve --hot --port 8080 --config webpack.develop.js",
     "prebuild": "npm run clean",
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "predeploy": "npm run build && npm run generate-manifest:prod",
+    "deploy": "gh-pages -d dist",
+    "generate-manifest:dev": "NODE_ENV=development node scripts/generate-manifest.js",
+    "generate-manifest:prod": "NODE_ENV=production node scripts/generate-manifest.js"
   },
   "dependencies": {
     "@looker/components": "^4.0.4",
@@ -75,13 +77,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/joeymbryan/converstional-analytics-explore-evaluator.git"
+    "url": "git+https://github.com/joeymbryan/conversational-analytics-explore-evaluator.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/joeymbryan/converstional-analytics-explore-evaluator/issues"
+    "url": "https://github.com/joeymbryan/conversational-analytics-explore-evaluator/issues"
   },
-  "homepage": "https://github.com/joeymbryan/converstional-analytics-explore-evaluator#readme"
+  "homepage": "https://github.com/joeymbryan/conversational-analytics-explore-evaluator#readme"
 }

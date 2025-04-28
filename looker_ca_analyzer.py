@@ -273,15 +273,21 @@ def generate_synonyms(field_part: str, label: str) -> list:
 
     return sorted(list(words))
 
-def generate_agent_instructions(top_used_fields: list, recommendations: list) -> list:
-    """Generates suggested agent instructions based on analysis results."""
+def generate_agent_instructions(top_used_fields: list, recommendations: list, user_description: str = None, common_questions: str = None, user_goals: str = None) -> list:
+    """Generates suggested agent instructions based on analysis results and user input."""
     instructions = []
+
+    if user_description:
+        instructions.append(f"User Description: {user_description}")
+    if common_questions:
+        instructions.append(f"Common Questions: {common_questions}")
+    if user_goals:
+        instructions.append(f"User Goals: {user_goals}")
 
     if top_used_fields:
         top_field_names = [field_data[0] for field_data in top_used_fields[:AGENT_INSTRUCTION_TOP_FIELDS]]
         if top_field_names:
-            instruction = f"The most important fields in this data source are likely: {', '.join(top_field_names)}."
-            instructions.append(instruction)
+            instructions.append(f"Most Common Fields: {', '.join(top_field_names)}")
 
     if not instructions:
         instructions.append("No specific agent instructions generated automatically. Review recommendations and top fields manually.")
@@ -348,7 +354,7 @@ def generate_ca_lookml_file_content(explore_key: str, parsed_data: dict, explore
 
     return "\n".join(lines)
 
-def analyze_lookml(explore_name, model_name=None):
+def analyze_lookml(explore_name, model_name=None, user_description=None, common_questions=None, user_goals=None):
     """Main function to analyze LookML for CA readiness."""
     try:
         # Initialize services
@@ -418,7 +424,13 @@ def analyze_lookml(explore_name, model_name=None):
                         result["lookml_suggestions"] = section.split("\n", 1)[1].strip()
                 
                 # Generate additional content
-                result["agent_instructions"] = generate_agent_instructions(top_fields, result.get("recommendations", []))
+                result["agent_instructions"] = generate_agent_instructions(
+                    top_fields,
+                    result.get("recommendations", []),
+                    user_description=user_description,
+                    common_questions=common_questions,
+                    user_goals=user_goals
+                )
                 result["ca_lookml_file"] = generate_ca_lookml_file_content(
                     f"{model_name}/{explore_name}",
                     result,

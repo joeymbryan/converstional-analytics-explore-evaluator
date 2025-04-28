@@ -2,17 +2,18 @@ project_name: "conversational-analytics-explore-evaluator"
 
 application: ca_explore_evaluator {
   label: "CA Explore Evaluator"
-  url: "https://joeymbryan.github.io/converstional-analytics-explore-evaluator/bundle.js"
+  url: "http://localhost:8080/bundle.js"
   # File containing the code
   file: "bundle.js"
   entitlements: {
-    core_api_methods: ["lookml_model_explore", "run_inline_query", "me"]
+    core_api_methods: ["all_lookml_models", "lookml_model_explore", "run_inline_query", "me"]
     navigation: yes
     use_form_submit: yes
     use_embeds: no
-    external_api_urls: ["https://joeymbryan.github.io"]
+    use_iframes: yes
+    external_api_urls: ["http://localhost:8080"]
     oauth2_urls: []
     scoped_user_attributes: []
     global_user_attributes: []
   }
-} 
+}

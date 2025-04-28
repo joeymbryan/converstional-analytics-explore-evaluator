@@ -10,7 +10,7 @@ module.exports = merge(common, {
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
       'Access-Control-Allow-Headers': 'X-Requested-With, content-type, Authorization',
       'Access-Control-Allow-Credentials': 'true',
-      'Content-Security-Policy': "default-src 'self' http: 'unsafe-inline' 'unsafe-eval' ws: wss:; connect-src 'self' http: wss:; img-src 'self' http: data:; font-src 'self' http: data:;"
+      'Content-Security-Policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; base-uri 'self';"
     },
     historyApiFallback: true,
     hot: true,
@@ -18,7 +18,7 @@ module.exports = merge(common, {
     port: 8080,
     allowedHosts: 'all',
     client: {
-      webSocketURL: 'auto://0.0.0.0:0/ws'
+      webSocketURL: 'ws://localhost:8080/ws'
     }
   },
 }) 

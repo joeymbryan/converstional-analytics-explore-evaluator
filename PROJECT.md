@@ -144,3 +144,59 @@ Looker's Conversational Analytics feature requires well-structured and documente
    - Integration tests
    - User documentation
    - Developer guide
+
+# ExploreWise Project Plan
+
+## Current Status
+- ✅ Basic extension setup with React and Looker Components
+- ✅ Model/Explore selector implemented
+- ✅ Basic UI layout and styling
+
+## Next Steps
+
+### 1. Explore Details Component
+Create a new component to display explore details including:
+- Description
+- Fields list
+- Last LookML Update
+- [ ] Create ExploreDetails.tsx component
+- [ ] Implement SDK calls to fetch explore metadata
+- [ ] Display explore information in a structured format
+
+### 2. User Context Form
+Add form fields for:
+- [ ] User Description text area
+- [ ] Common Questions text area
+- [ ] User Goals text area
+- [ ] Top Fields input (comma-separated)
+
+### 3. Analysis Features
+- [ ] Implement field usage analysis
+- [ ] Add query pattern detection
+- [ ] Generate optimization recommendations
+- [ ] Create visualization of explore usage
+
+### 4. Enhanced UI/UX
+- [ ] Add loading states
+- [ ] Implement error handling
+- [ ] Add field validation
+- [ ] Include helpful tooltips
+- [ ] Create a responsive layout
+
+### 5. Documentation
+- [ ] Add inline code documentation
+- [ ] Create user guide
+- [ ] Document API interactions
+- [ ] Add setup instructions
+
+## Technical Considerations
+- Ensure proper error handling for SDK calls
+- Implement proper TypeScript types for all components
+- Follow Looker extension best practices
+- Maintain consistent styling using Looker Components
+
+## Future Enhancements
+- Save/load analysis configurations
+- Export reports as PDF/CSV
+- Integration with Looker scheduling
+- Historical analysis tracking

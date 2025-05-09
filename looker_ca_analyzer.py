@@ -12,6 +12,8 @@ import collections
 import typing
 import textwrap
 import re
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 # Configuration constants
 LOOKER_PROJECT_ID = "joey-looker"
@@ -416,13 +418,22 @@ def analyze_lookml(explore_name, model_name=None, user_description=None, common_
                         grade = int(section.split("\n")[1].strip())
                         result["grade"] = grade
                     elif section.strip().startswith("RATIONALE"):
-                        result["rationale"] = section.split("\n", 1)[1].strip()
+                        rationale = section.split("\n", 1)[1].strip()
+                        # Make rationale concise: use only the first sentence
+                        concise_rationale = rationale.split('. ')[0] + ('.' if '.' in rationale else '')
+                        result["rationale"] = concise_rationale
                     elif section.strip().startswith("RECOMMENDATIONS"):
                         recs = section.split("\n", 1)[1].strip()
-                        result["recommendations"] = [r.strip().lstrip('0123456789. ') for r in recs.split("\n") if r.strip()]
+                        # Make recommendations short and actionable (first sentence or imperative phrase)
+                        short_recs = []
+                        for r in recs.split("\n"):
+                            r = r.strip().lstrip('0123456789. ')
+                            if r:
+                                short_recs.append(r.split('. ')[0] + ('.' if '.' in r else ''))
+                        result["recommendations"] = short_recs
                     elif section.strip().startswith("GENERATED LOOKML SUGGESTIONS"):
-                        result["lookml_suggestions"] = section.split("\n", 1)[1].strip()
-                
+                        lookml = section.split("\n", 1)[1].strip()
+                        result["lookml_suggestions"] = lookml
                 # Generate additional content
                 result["agent_instructions"] = generate_agent_instructions(
                     top_fields,
@@ -445,4 +456,165 @@ def analyze_lookml(explore_name, model_name=None, user_description=None, common_
         return {
             "status": "error",
             "error": str(e)
-        } 
+        }
+
+def summarize_recommendations_with_gemini(gemini_model, recommendations):
+    prompt = (
+        "Summarize the following recommendations for LookML improvements into a concise, actionable list. "
+        "Group similar actions and focus on the most impactful changes. Use as few words as possible while preserving meaning.\n\n"
+        "Recommendations:\n"
+    )
+    for rec in recommendations:
+        prompt += f"- {rec}\n"
+    prompt += "\nSummarized Recommendations:"
+    summary = analyze_with_gemini(gemini_model, prompt, '', '')
+    # Extract the summary list (remove any extra text before/after)
+    if isinstance(summary, str):
+        lines = summary.strip().split('\n')
+        # Only keep lines that look like summary items
+        summary_lines = [line.lstrip('-*0123456789. ').strip() for line in lines if line.strip()]
+        return summary_lines
+    return []
+
+def filter_recommendations_for_section(recommendations, section):
+    section_lower = section.lower()
+    # For 'explore', include general/explore-level recs
+    if section_lower == 'explore':
+        return [rec for rec in recommendations if 'explore' in rec.lower() or 'join' in rec.lower() or 'all' in rec.lower()]
+    # For a view, include recs that mention the view name or are general
+    return [rec for rec in recommendations if section_lower in rec.lower() or 'all' in rec.lower()]
+
+def filter_fields_for_section(weighted_fields, section):
+    section_lower = section.lower()
+    # For 'explore', include fields that look like joins or are not view-specific
+    if section_lower == 'explore':
+        return [f for f in weighted_fields if '.' not in f[0] or 'join' in f[0].lower()]
+    # For a view, include fields that start with the view name
+    return [f for f in weighted_fields if f[0].lower().startswith(section_lower + '.')]
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
+@app.route('/generate_ca_lookml', methods=['POST', 'OPTIONS'])
+def generate_ca_lookml():
+    if request.method == 'OPTIONS':
+        return '', 204
+    data = request.get_json()
+    model_name = data.get('model_name')
+    explore_name = data.get('explore_name')
+    section = data.get('section', 'explore')  # 'explore' or view name
+    MAX_RECOMMENDATIONS = 7
+    MAX_WEIGHTED_FIELDS = 10
+    recommendations = data.get('recommendations', [])[:MAX_RECOMMENDATIONS]
+    weighted_fields = data.get('weighted_fields', [])[:MAX_WEIGHTED_FIELDS]
+    user_description = (data.get('user_description', '') or '')[:300]
+    common_questions = (data.get('common_questions', '') or '')[:300]
+    user_goals = (data.get('user_goals', '') or '')[:300]
+    is_continue = data.get('continue', False)
+    previous_prompt = data.get('previous_prompt', '')
+    previous_output = data.get('previous_output', '')
+    use_extends = data.get('use_extends', False)
+
+    looker_config = get_looker_config_from_secret_manager(LOOKER_PROJECT_ID, LOOKER_SECRET_NAME, LOOKER_SECRET_VERSION)
+    gemini_model = initialize_vertex_ai(VERTEX_PROJECT_ID, VERTEX_LOCATION)
+
+    # Filter recommendations and fields for this section
+    filtered_recs = filter_recommendations_for_section(recommendations, section)
+    filtered_fields = filter_fields_for_section(weighted_fields, section)
+
+    # Filter lookml_suggestions for this section (if present)
+    lookml_suggestions = data.get('lookml_suggestions', '')
+    relevant_lookml_suggestions = ''
+    if lookml_suggestions and isinstance(lookml_suggestions, str):
+        # Only include suggestions that mention the section name
+        section_lower = section.lower()
+        relevant_lines = [line for line in lookml_suggestions.split('\n') if section_lower in line.lower() or 'explore' in line.lower()]
+        relevant_lookml_suggestions = '\n'.join(relevant_lines)
+
+    # For view generation, only send weighted fields that belong to that view
+    if section.lower() != 'explore':
+        filtered_fields = [f for f in filtered_fields if f[0].lower().startswith(section.lower() + '.')]
+        use_extends = True  # Always generate as extends for views
+
+    if is_continue and previous_prompt and previous_output:
+        last_lines = '\n'.join(previous_output.strip().split('\n')[-30:])
+        prompt = previous_prompt + (
+            "\n\nHere are the last lines you generated. Do NOT repeat any code already provided. Only generate new code that comes after these lines.\n"
+            f"LAST_LINES:\n{last_lines}\n"
+        )
+    else:
+        # Step 1: Summarize recommendations with Gemini
+        summarized_recs = summarize_recommendations_with_gemini(gemini_model, filtered_recs)
+        # Step 2: Use summary in LookML generation prompt
+        if section.lower() == 'explore':
+            prompt = f"""
+You are an expert LookML developer. Generate the LookML for the explore '{explore_name}' in model '{model_name}', implementing as many of the summarized recommendations as possible for Conversational Analytics readiness. Use the weighted fields to prioritize which joins or explore-level settings to improve. Use the user context to inform labels and descriptions. Output only the LookML code for the explore, ready to copy/paste into a LookML project.
+
+User Description: {user_description}
+Common Questions: {common_questions}
+User Goals: {user_goals}
+
+Weighted Fields (most important first): {filtered_fields}
+
+Summarized Recommendations:\n"""
+        else:
+            prompt = f"""
+You are an expert LookML developer. Generate an extends view for '{section}' in model '{model_name}', including ONLY the relevant fields below. Implement as many of the summarized recommendations as possible for Conversational Analytics readiness. Use the weighted fields to prioritize which fields to improve. Use the user context to inform labels and descriptions.
+
+IMPORTANT RULES:
+1. Keep all synonyms within the description parameter, do not add a separate synonym parameter
+2. Only include the relevant fields listed below in the extends view
+3. Output only the LookML code for the extends view, ready to copy/paste into a LookML project.
+
+User Description: {user_description}
+Common Questions: {common_questions}
+User Goals: {user_goals}
+
+Relevant Fields (most important first): {filtered_fields}
+
+Summarized Recommendations:\n"""
+        for rec in summarized_recs:
+            prompt += f"- {rec}\n"
+        if relevant_lookml_suggestions:
+            prompt += f"\nRelevant LookML Suggestions:\n{relevant_lookml_suggestions}\n"
+        prompt += "\nGenerate only the LookML code for this extends view. Do not include other views or explores."
+
+    lookml_code = analyze_with_gemini(gemini_model, prompt, model_name, explore_name)
+
+    # Post-process to remove duplicate lines at the join if this is a continue request
+    if is_continue and previous_output and isinstance(lookml_code, str):
+        prev_lines = previous_output.strip().split('\n')
+        new_lines = lookml_code.strip().split('\n')
+        max_overlap = min(30, len(prev_lines), len(new_lines))
+        overlap = 0
+        for i in range(max_overlap, 0, -1):
+            if prev_lines[-i:] == new_lines[:i]:
+                overlap = i
+                break
+        if overlap > 0:
+            lookml_code = '\n'.join(new_lines[overlap:])
+        lookml_code = previous_output + ('\n' if not previous_output.endswith('\n') else '') + lookml_code
+
+    is_truncated = False
+    if isinstance(lookml_code, str) and 'Warning: Response truncated (MAX_TOKENS)' in lookml_code:
+        is_truncated = True
+
+    return jsonify({
+        "ca_lookml_code": lookml_code,
+        "is_truncated": is_truncated,
+        "prompt": prompt
+    })
+
+@app.route('/analyze', methods=['POST', 'OPTIONS'])
+def analyze():
+    if request.method == 'OPTIONS':
+        return '', 204
+    data = request.get_json()
+    result = analyze_lookml(
+        explore_name=data.get('explore_name'),
+        model_name=data.get('model_name'),
+        user_description=data.get('user_description'),
+        common_questions=data.get('common_questions'),
+        user_goals=data.get('user_goals')
+    )
+    return jsonify(result) 

@@ -29,6 +29,15 @@ interface ExploreDetailsProps {
   onDescriptionChange: (description: string) => void
   onQuestionsChange: (questions: string) => void
   onGoalsChange: (goals: string) => void
+  userDescription: string
+  onUserDescriptionChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
+  commonQuestions: string
+  onCommonQuestionsChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
+  userGoals: string
+  onUserGoalsChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
+  // Optionally pass description and lastUpdate if needed in the future
+  // description?: string
+  // lastUpdate?: string
 }
 
 export const ExploreDetails: React.FC<ExploreDetailsProps> = ({
@@ -37,26 +46,37 @@ export const ExploreDetails: React.FC<ExploreDetailsProps> = ({
   onDescriptionChange,
   onQuestionsChange,
   onGoalsChange,
+  userDescription,
+  onUserDescriptionChange,
+  commonQuestions,
+  onCommonQuestionsChange,
+  userGoals,
+  onUserGoalsChange,
 }) => {
   const [description, setDescription] = useState('')
   const [lastUpdate, setLastUpdate] = useState('')
   const [weightedFields, setWeightedFields] = useState<WeightedField[]>([])
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
-  const [userDescription, setUserDescription] = useState('')
-  const [commonQuestions, setCommonQuestions] = useState('')
-  const [userGoals, setUserGoals] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const extensionContext = React.useContext(ExtensionContext)
   const sdk = extensionContext.core40SDK
 
   useEffect(() => {
     let isMounted = true;
+    console.log('[ExploreDetails] useEffect triggered. exploreName:', exploreName);
     const fetchExploreDetails = async () => {
-      if (!exploreName) return
+      if (!exploreName) {
+        console.log('[ExploreDetails] No exploreName provided, aborting fetch.');
+        return
+      }
 
       setIsLoading(true)
+      setLoadError(null)
+      console.log('[ExploreDetails] Loading fields for:', exploreName)
       try {
         const [modelName, explorePath] = exploreName.split('/')
+        console.log('[ExploreDetails] modelName:', modelName, 'explorePath:', explorePath)
         const exploreData = await sdk.ok(
           sdk.lookml_model_explore(modelName, explorePath)
         )
@@ -64,6 +84,7 @@ export const ExploreDetails: React.FC<ExploreDetailsProps> = ({
           setDescription(exploreData.description || '')
           setLastUpdate(new Date().toISOString().split('T')[0]) // TODO: Get actual last update date
         }
+        console.log('[ExploreDetails] Explore data loaded:', exploreData)
 
         // Fetch field weights
         const queryPayload = {
@@ -87,11 +108,11 @@ export const ExploreDetails: React.FC<ExploreDetailsProps> = ({
             limit: '1000',
           },
         };
-        console.log('run_inline_query payload:', queryPayload);
+        console.log('[ExploreDetails] run_inline_query payload:', queryPayload);
         const weightedFieldsData = await sdk.ok(
           sdk.run_inline_query(queryPayload)
         )
-        console.log('weightedFieldsData:', weightedFieldsData);
+        console.log('[ExploreDetails] weightedFieldsData:', weightedFieldsData);
 
         // Process weighted fields
         const fieldWeights = new Map<string, number>()
@@ -109,7 +130,7 @@ export const ExploreDetails: React.FC<ExploreDetailsProps> = ({
                 })
               }
             } catch (error) {
-              console.error('Error processing record:', error)
+              console.error('[ExploreDetails] Error processing record:', error)
             }
           })
         }
@@ -123,13 +144,20 @@ export const ExploreDetails: React.FC<ExploreDetailsProps> = ({
           setSelectedFields(new Set(sortedFields.map(f => f.name)))
           onFieldsChange(sortedFields.map(f => f.name))
         }
-      } catch (error) {
+        console.log('[ExploreDetails] Weighted fields set:', sortedFields)
+      } catch (error: any) {
         if (isMounted) {
-          console.error('Error fetching explore details:', error)
+          console.error('[ExploreDetails] Error fetching explore details:', error)
+          if (error && error.message && error.message.includes('Not found')) {
+            setLoadError('This explore does not exist in Looker. Please check your LookML project or select a different explore.')
+          } else {
+            setLoadError('Failed to load explore details. Please try again.')
+          }
         }
       } finally {
         if (isMounted) {
           setIsLoading(false)
+          console.log('[ExploreDetails] Field loading complete for:', exploreName)
         }
       }
     }
@@ -149,91 +177,60 @@ export const ExploreDetails: React.FC<ExploreDetailsProps> = ({
     onFieldsChange(Array.from(newSelectedFields))
   }
 
-  const handleUserDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setUserDescription(e.target.value)
-    onDescriptionChange(e.target.value)
-  }
-
-  const handleCommonQuestionsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setCommonQuestions(e.target.value)
-    onQuestionsChange(e.target.value)
-  }
-
-  const handleUserGoalsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setUserGoals(e.target.value)
-    onGoalsChange(e.target.value)
-  }
-
   if (isLoading) {
-    return <Box>Loading explore details...</Box>
+    return <Box>Loading fields...</Box>
+  }
+  if (loadError) {
+    return <Box color="critical">{loadError}</Box>
   }
 
   return (
-    <Box p="large" maxWidth="800px" mx="auto">
-      <SpaceVertical gap="large">
+    <Box>
+      <SpaceVertical gap="medium">
         <Card>
-          <Box p="large">
-            <SpaceVertical gap="medium">
-              <Heading as="h3" fontSize="small">Explore Details</Heading>
-              <Box>
-                <Label fontSize="small">Description</Label>
-                <Text fontSize="small">{description || 'No description available'}</Text>
-              </Box>
-              <Box>
-                <Label fontSize="small">Last LookML Update</Label>
-                <Text fontSize="small">{lastUpdate}</Text>
-              </Box>
-            </SpaceVertical>
-          </Box>
+          <Label>User Description</Label>
+          <FieldTextArea
+            value={userDescription}
+            onChange={onUserDescriptionChange}
+            placeholder="Describe the user or audience for this explore"
+          />
         </Card>
-
         <Card>
-          <Box p="large">
-            <SpaceVertical gap="medium">
-              <Heading as="h3" fontSize="small">Fields</Heading>
-              {weightedFields.length === 0 ? (
-                <Text fontSize="small" color="text2">No field usage data found for this explore.</Text>
-              ) : (
-                <List>
-                  {weightedFields.map(({ name, weight }) => (
-                    <ListItem key={name}>
-                      <FieldCheckbox
-                        label={`${name} (weight: ${weight.toFixed(2)})`}
-                        checked={selectedFields.has(name)}
-                        onChange={() => handleFieldToggle(name)}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              )}
-            </SpaceVertical>
-          </Box>
+          <Label>Common Questions</Label>
+          <FieldTextArea
+            value={commonQuestions}
+            onChange={onCommonQuestionsChange}
+            placeholder="What are common questions users ask of this explore?"
+          />
         </Card>
-
         <Card>
-          <Box p="large">
-            <SpaceVertical gap="medium">
-              <FieldTextArea
-                label="User Description"
-                value={userDescription}
-                onChange={handleUserDescriptionChange}
-                description="Provide a description of the users who will be using this explore."
-              />
-              <FieldTextArea
-                label="Common Questions"
-                value={commonQuestions}
-                onChange={handleCommonQuestionsChange}
-                description="List the common questions that users ask when using this explore."
-              />
-              <FieldTextArea
-                label="User Goals"
-                value={userGoals}
-                onChange={handleUserGoalsChange}
-                description="Describe the goals that users are trying to achieve when using this explore."
-              />
-            </SpaceVertical>
-          </Box>
+          <Label>User Goals</Label>
+          <FieldTextArea
+            value={userGoals}
+            onChange={onUserGoalsChange}
+            placeholder="What are the main goals users have when using this explore?"
+          />
         </Card>
+        {weightedFields.length === 0 ? (
+          <Text fontSize="small" color="text2">No field usage data found for this explore.</Text>
+        ) : (
+          <List>
+            {weightedFields.map(({ name, weight }) => (
+              <ListItem key={name}>
+                <Box>
+                  <FieldCheckbox
+                    label={name}
+                    checked={selectedFields.has(name)}
+                    onChange={() => handleFieldToggle(name)}
+                  />
+                  <Text fontSize="xsmall" color="text2" pl="large">
+                    weighted score: {weight.toFixed(2)}
+                  </Text>
+                </Box>
+              </ListItem>
+            ))}
+          </List>
+        )}
       </SpaceVertical>
     </Box>
   )

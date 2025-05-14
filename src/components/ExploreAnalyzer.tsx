@@ -36,6 +36,9 @@ interface AnalysisResult {
   lookml_suggestions?: string
   model_name: string
   explore_name: string
+  user_description: string
+  common_questions: string
+  user_goals: string
 }
 
 export const ExploreAnalyzer: React.FC = () => {
@@ -81,6 +84,9 @@ export const ExploreAnalyzer: React.FC = () => {
       if (!selectedExplore) {
         setAnalysisResult(null)
         setLastAnalyzed(null)
+        setUserDescription('')
+        setCommonQuestions('')
+        setUserGoals('')
         return
       }
       
@@ -92,13 +98,22 @@ export const ExploreAnalyzer: React.FC = () => {
         if (savedResult) {
           setAnalysisResult(savedResult)
           setLastAnalyzed(savedResult.timestamp || 'Unknown date')
+          setUserDescription(savedResult.user_description || '')
+          setCommonQuestions(savedResult.common_questions || '')
+          setUserGoals(savedResult.user_goals || '')
         } else {
           setAnalysisResult(null)
           setLastAnalyzed(null)
+          setUserDescription('')
+          setCommonQuestions('')
+          setUserGoals('')
         }
       } catch (error) {
         console.error('Error loading saved analysis:', error)
         setError('Failed to load saved analysis')
+        setUserDescription('')
+        setCommonQuestions('')
+        setUserGoals('')
       } finally {
         setIsLoading(false)
       }
@@ -154,7 +169,10 @@ export const ExploreAnalyzer: React.FC = () => {
       if (result.status === 'success') {
         const analysisWithTimestamp = {
           ...result,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          user_description: userDescription,
+          common_questions: commonQuestions,
+          user_goals: userGoals,
         }
         setAnalysisResult(analysisWithTimestamp)
         setLastAnalyzed(analysisWithTimestamp.timestamp)
@@ -234,7 +252,6 @@ export const ExploreAnalyzer: React.FC = () => {
   const getSections = () => {
     if (!analysisResult) return []
     const sections = new Set<string>()
-    // Always include the explore
     sections.add('explore')
     // Add all unique view names from top_used_fields
     if (analysisResult.top_used_fields) {
@@ -243,13 +260,18 @@ export const ExploreAnalyzer: React.FC = () => {
         if (parts.length === 2) sections.add(parts[0])
       })
     }
-    // Add all join names from raw_analysis (if available and parseable)
+    // Add base view and all join names/from from raw_analysis (if available and parseable)
     if (analysisResult.raw_analysis) {
       try {
         const exploreData = JSON.parse(analysisResult.raw_analysis)
+        // Debug log: print the parsed exploreData
+        // eslint-disable-next-line no-console
+        console.log('DEBUG: parsed exploreData from raw_analysis:', exploreData)
+        if (exploreData.view_name) sections.add(exploreData.view_name)
         if (exploreData.joins) {
           exploreData.joins.forEach((join: any) => {
             if (join.name) sections.add(join.name)
+            if (join.from) sections.add(join.from)
           })
         }
       } catch (e) {
@@ -305,22 +327,25 @@ export const ExploreAnalyzer: React.FC = () => {
       }
     }))
     try {
+      const payload = {
+        model_name: analysisResult.model_name,
+        explore_name: analysisResult.explore_name,
+        recommendations: analysisResult.recommendations,
+        weighted_fields: analysisResult.top_used_fields,
+        user_description: userDescription,
+        common_questions: commonQuestions,
+        user_goals: userGoals,
+        section,
+        use_extends: useExtends,
+      }
+      console.log('[LookML Generation] Sending payload:', payload)
       const response = await fetch('http://localhost:8082/generate_ca_lookml', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model_name: analysisResult.model_name,
-          explore_name: analysisResult.explore_name,
-          recommendations: analysisResult.recommendations,
-          weighted_fields: analysisResult.top_used_fields,
-          user_description: userDescription,
-          common_questions: commonQuestions,
-          user_goals: userGoals,
-          section,
-          use_extends: useExtends,
-        })
+        body: JSON.stringify(payload)
       })
       const data = await response.json()
+      console.log('[LookML Generation] Received response:', data)
       setSectionOutputs(prev => ({
         ...prev,
         [section]: {
@@ -333,6 +358,7 @@ export const ExploreAnalyzer: React.FC = () => {
         }
       }))
     } catch (err) {
+      console.error('[LookML Generation] Error:', err)
       setSectionOutputs(prev => ({
         ...prev,
         [section]: {
@@ -428,232 +454,176 @@ export const ExploreAnalyzer: React.FC = () => {
     } else {
       // Only fields for this view
       const viewFields = (analysisResult.top_used_fields || []).filter(f => f[0].startsWith(section + '.'))
-      prompt = `You are an expert LookML developer. Generate the LookML for the view '${section}' in model '${analysisResult.model_name}', implementing as many of the summarized recommendations as possible for Conversational Analytics readiness. Use the weighted fields to prioritize which fields to improve. Use the user context to inform labels and descriptions.\n\nIMPORTANT RULES:\n1. Keep all synonyms within the description parameter, do not add a separate synonym parameter\n2. Always generate as an extends view and only include relevant fields\n\nOutput only the LookML code for the view, ready to copy/paste into a LookML project.\n\nUser Description: ${userDescription}\nCommon Questions: ${commonQuestions}\nUser Goals: ${userGoals}\nWeighted Fields (most important first): ${viewFields.map(f=>f[0]).join(', ')}\nSummarized Recommendations:`
+      prompt = `You are an expert LookML developer. Generate the LookML for the view '${section}' in model '${analysisResult.model_name}', implementing as many of the summarized recommendations as possible for Conversational Analytics readiness. Use the weighted fields to prioritize which fields to improve. Use the user context to inform labels and descriptions. Output only the LookML code for the view, ready to copy/paste into a LookML project.\n\nUser Description: ${userDescription}\nCommon Questions: ${commonQuestions}\nUser Goals: ${userGoals}\nWeighted Fields (most important first): ${viewFields.map(f=>f[0]).join(', ')}\nSummarized Recommendations:`
     }
-    const tokens = estimateTokens(prompt)
-    setPromptSize(tokens)
-    setPromptWarning(tokens > 6000)
+    const tokenCount = estimateTokens(prompt)
+    setPromptSize(tokenCount)
+    setPromptWarning(tokenCount > 30000) // Warning if over 30k tokens
   }, [analysisResult, selectedSections, userDescription, commonQuestions, userGoals])
 
   return (
-    <Box p="xxlarge" maxWidth="1200px" mx="auto">
+    <Box p="large">
       <SpaceVertical gap="large">
-        <Heading fontSize="xlarge">Conversational Analytics Explore Evaluator</Heading>
-        <Paragraph fontSize="large">Analyze and optimize your Looker Explores for Conversational Analytics.</Paragraph>
-
-        {/* Explore Selector and Explore Details side by side */}
-        <Box display="flex" alignItems="flex-start" mb="xlarge">
-          <Box flex="1 1 400px" mr="xlarge">
-            <ExploreSelector onExploreSelect={handleExploreSelect} />
-          </Box>
-          {selectedExplore && (
-            <Card minWidth="260px" maxWidth="420px" p="large">
-              <Heading as="h4" fontSize="medium" mb="medium">Explore Details</Heading>
-              <Box>
-                <strong>Description</strong>
-                <Paragraph>{/* You can add a prop to pass the description here if needed */}No description available</Paragraph>
-              </Box>
-              <Box mt="small">
-                <strong>Last LookML Update</strong>
-                <Paragraph>{new Date().toISOString().split('T')[0]}</Paragraph>
-              </Box>
-            </Card>
-          )}
-        </Box>
-
-        <Box display="flex" flexWrap="wrap" alignItems="flex-start">
-          {/* Fields Selection Card */}
-          <Card minWidth="340px" flex="1 1 340px" maxWidth="420px" p="large" mr="xlarge">
-            <Heading as="h4" fontSize="medium" mb="medium">Fields</Heading>
-            <Box maxHeight="400px" overflowY="auto">
-              {selectedExplore && (
-                <ExploreDetails
-                  exploreName={selectedExplore}
-                  onFieldsChange={setSelectedFields}
-                  onDescriptionChange={setUserDescription}
-                  onQuestionsChange={setCommonQuestions}
-                  onGoalsChange={setUserGoals}
-                />
-              )}
-            </Box>
-          </Card>
-
-          {/* User Input Card */}
-          <Card minWidth="340px" flex="1 1 340px" maxWidth="420px" p="large" mr="xlarge">
-            <Heading as="h4" fontSize="medium" mb="medium">User Context</Heading>
-            <SpaceVertical gap="medium">
-              <Box mb="medium">
-                <label htmlFor="user-description"><strong>User Description</strong></label>
-                <textarea
-                  id="user-description"
-                  value={userDescription}
-                  onChange={e => setUserDescription(e.target.value)}
-                  placeholder="Provide a description of the users who will be using this explore."
-                  style={{ width: '100%', minHeight: 60, marginTop: 4, boxSizing: 'border-box', resize: 'vertical' }}
-                />
-              </Box>
-              <Box mb="medium">
-                <label htmlFor="common-questions"><strong>Common Questions</strong></label>
-                <textarea
-                  id="common-questions"
-                  value={commonQuestions}
-                  onChange={e => setCommonQuestions(e.target.value)}
-                  placeholder="List the common questions that users ask when using this explore."
-                  style={{ width: '100%', minHeight: 60, marginTop: 4, boxSizing: 'border-box', resize: 'vertical' }}
-                />
-              </Box>
-              <Box mb="medium">
-                <label htmlFor="user-goals"><strong>User Goals</strong></label>
-                <textarea
-                  id="user-goals"
-                  value={userGoals}
-                  onChange={e => setUserGoals(e.target.value)}
-                  placeholder="Describe the goals that users are trying to achieve when using this explore."
-                  style={{ width: '100%', minHeight: 60, marginTop: 4, boxSizing: 'border-box', resize: 'vertical' }}
-                />
-              </Box>
-            </SpaceVertical>
-          </Card>
-        </Box>
-
-        <Box mt="xlarge">
-          <Space>
-            <LoadingButton
-              is_loading={isAnalyzing}
-              onClick={handleAnalyze}
+        <Heading>Conversational Analytics Explore Evaluator</Heading>
+        
+        <Card>
+          <SpaceVertical gap="medium">
+            <ExploreSelector
+              onExploreSelect={handleExploreSelect}
+            />
+            
+            {selectedExplore && (
+              <ExploreDetails
+                exploreName={selectedExplore}
+                onFieldsChange={setSelectedFields}
+                onDescriptionChange={setUserDescription}
+                onQuestionsChange={setCommonQuestions}
+                onGoalsChange={setUserGoals}
+                userDescription={userDescription}
+                onUserDescriptionChange={e => setUserDescription(e.target.value)}
+                commonQuestions={commonQuestions}
+                onCommonQuestionsChange={e => setCommonQuestions(e.target.value)}
+                userGoals={userGoals}
+                onUserGoalsChange={e => setUserGoals(e.target.value)}
+              />
+            )}
+            
+            {error && (
+              <MessageBar intent="critical">
+                {error}
+              </MessageBar>
+            )}
+            
+            <Button
               disabled={!isFormValid || isAnalyzing}
+              onClick={handleAnalyze}
             >
               {isAnalyzing ? 'Analyzing...' : 'Generate Insights'}
-            </LoadingButton>
+            </Button>
+          </SpaceVertical>
+        </Card>
 
-            {lastAnalyzed && (
-              <ButtonOutline disabled>
-                Last analyzed: {new Date(lastAnalyzed).toLocaleString()}
-              </ButtonOutline>
-            )}
-          </Space>
-        </Box>
+        {analysisResult && (
+          <Card>
+            <SpaceVertical gap="medium">
+              <Heading>Analysis Results</Heading>
+              
+              {lastAnalyzed && (
+                <Text>Last analyzed: {new Date(lastAnalyzed).toLocaleString()}</Text>
+              )}
+              
+              <SpaceVertical gap="small">
+                <Heading as="h3">Grade: {analysisResult.grade}/10</Heading>
+                <Paragraph>{analysisResult.rationale}</Paragraph>
+              </SpaceVertical>
 
-        {error && (
-          <MessageBar intent="critical">
-            {error}
-          </MessageBar>
-        )}
-
-        {isLoading ? (
-          <Box p="large" display="flex" justifyContent="center">
-            <Spinner size={80} />
-          </Box>
-        ) : analysisResult && (
-          <Box maxWidth="1200px" mx="auto">
-            <Card mt="xlarge">
-              <Box p="large">
-                <SpaceVertical gap="large">
-                  <Heading as="h3">Analysis Results</Heading>
-                  {/* Grade at the top, above rationale */}
-                  {analysisResult.grade !== undefined && (
-                    <Box>
-                      <Heading as="h4">Grade: {analysisResult.grade} / 100</Heading>
-                    </Box>
-                  )}
-                  {analysisResult.rationale && (
-                    <Paragraph>
-                      {analysisResult.rationale.split('. ')[0] + (analysisResult.rationale.includes('.') ? '.' : '')}
-                    </Paragraph>
-                  )}
-                  {/* Agent Instructions */}
-                  {analysisResult.agent_instructions && analysisResult.agent_instructions.length > 0 && (
-                    <Box>
-                      <Heading as="h4">Agent Instructions</Heading>
-                      <ul>
-                        {analysisResult.agent_instructions.map((instruction, index) => (
-                          <li key={index}>{instruction}</li>
-                        ))}
-                      </ul>
-                    </Box>
-                  )}
-                  {/* Step 2: Section-based LookML Generation */}
-                  {analysisResult && (
-                    <Box mt="xlarge">
-                      <Heading as="h4">Generate LookML</Heading>
-                      <SpaceVertical gap="large">
-                        <Box>
-                          <SpaceVertical gap="small">
-                            <Label>Select Sections to Generate</Label>
-                            <List>
-                              {getSections().map(section => (
-                                <ListItem key={section}>
-                                  <FieldCheckbox
-                                    label={section === 'explore' ? 'Explore' : `View: ${section}`}
-                                    checked={selectedSections.has(section)}
-                                    onChange={() => handleSectionToggle(section)}
-                                  />
-                                </ListItem>
-                              ))}
-                            </List>
-                          </SpaceVertical>
-                        </Box>
-
-                        <Box>
-                          <SpaceVertical gap="small">
-                            <Label>Generation Options</Label>
-                            <FieldCheckbox
-                              label="Generate as extends (will hide unnecessary fields)"
-                              checked={useExtends}
-                              onChange={() => setUseExtends(!useExtends)}
-                            />
-                          </SpaceVertical>
-                        </Box>
-
-                        {selectedSections.size > 0 && (
-                          <Box mb="small">
-                            <Text fontSize="small" color={promptWarning ? 'critical' : 'text2'}>
-                              Prompt size: {promptSize} tokens / 8192{promptWarning ? ' (Warning: may exceed Gemini limit!)' : ''}
-                            </Text>
-                          </Box>
-                        )}
-
-                        <Button
-                          onClick={handleGenerateAll}
-                          disabled={selectedSections.size === 0 || isGeneratingSequentially}
-                        >
-                          {isGeneratingSequentially 
-                            ? `Generating ${currentSectionIndex + 1}/${selectedSections.size}...` 
-                            : 'Generate LookML'}
-                        </Button>
-
-                        {Object.entries(sectionOutputs).map(([section, state]) => (
-                          <Card key={section} p="large">
-                            <Heading as="h5" fontSize="medium" mb="small">
-                              {section === 'explore' ? 'Explore' : `View: ${section}`}
-                            </Heading>
-                            {state.code && (
-                              <Box mt="medium">
-                                <CopyToClipboard text={state.code} onCopy={() => handleCopySection(section)}>
-                                  <Button mb="small">Copy</Button>
-                                </CopyToClipboard>
-                                {state.copySuccess && <span style={{ color: 'green', marginLeft: 8 }}>Copied!</span>}
-                                {state.isTruncated && (
-                                  <Button mt="small" onClick={() => handleContinueSectionLookml(section)} disabled={state.isContinuing}>
-                                    {state.isContinuing ? 'Continuing...' : 'Continue'}
-                                  </Button>
-                                )}
-                                <pre style={{ background: '#f6f8fa', padding: '16px', borderRadius: '6px', marginTop: '8px', overflowX: 'auto', fontSize: '0.95em' }}>
-                                  {state.code}
-                                </pre>
-                              </Box>
-                            )}
-                          </Card>
-                        ))}
-                      </SpaceVertical>
-                    </Box>
-                  )}
+              {analysisResult.recommendations && (
+                <SpaceVertical gap="small">
+                  <Heading as="h3">Recommendations</Heading>
+                  <List>
+                    {analysisResult.recommendations.map((rec, i) => (
+                      <ListItem key={i}>{rec}</ListItem>
+                    ))}
+                  </List>
                 </SpaceVertical>
-              </Box>
-            </Card>
-          </Box>
+              )}
+
+              {analysisResult.agent_instructions && (
+                <SpaceVertical gap="small">
+                  <Heading as="h3">Agent Instructions</Heading>
+                  <List>
+                    {analysisResult.agent_instructions.map((instruction, i) => (
+                      <ListItem key={i}>{instruction}</ListItem>
+                    ))}
+                  </List>
+                </SpaceVertical>
+              )}
+
+              <SpaceVertical gap="small">
+                <Heading as="h3">Generate LookML</Heading>
+                <Space gap="small">
+                  <FieldCheckbox
+                    label="Use extends instead of refinements"
+                    checked={useExtends}
+                    onChange={e => setUseExtends((e.target as HTMLInputElement).checked)}
+                  />
+                </Space>
+                
+                <SpaceVertical gap="small">
+                  <Heading as="h4">Select Sections to Generate</Heading>
+                  <Space gap="small">
+                    {getSections().map(section => (
+                      <FieldCheckbox
+                        key={section}
+                        label={section}
+                        checked={selectedSections.has(section)}
+                        onChange={() => handleSectionToggle(section)}
+                      />
+                    ))}
+                  </Space>
+                </SpaceVertical>
+
+                {promptSize > 0 && (
+                  <Text color={promptWarning ? "critical" : "text"}>
+                    Estimated prompt size: {promptSize} tokens
+                    {promptWarning && " (Warning: Large prompt may be truncated)"}
+                  </Text>
+                )}
+
+                <Button
+                  disabled={selectedSections.size === 0 || isGeneratingSequentially}
+                  onClick={handleGenerateAll}
+                >
+                  {isGeneratingSequentially ? 'Generating...' : 'Generate Selected Sections'}
+                </Button>
+
+                {Object.entries(sectionOutputs).map(([section, state]) => (
+                  <Card key={section}>
+                    <SpaceVertical gap="small">
+                      <Heading as="h4">{section}</Heading>
+                      {state.isLoading ? (
+                        <Spinner />
+                      ) : state.code ? (
+                        <>
+                          <Box
+                            p="medium"
+                            bg="background"
+                            border="1px solid #e0e0e0"
+                            borderRadius="medium"
+                            style={{ maxHeight: '400px', overflow: 'auto' }}
+                          >
+                            <ReactMarkdown>{state.code}</ReactMarkdown>
+                          </Box>
+                          <Space gap="small">
+                            <CopyToClipboard
+                              text={state.code}
+                              onCopy={() => handleCopySection(section)}
+                            >
+                              <ButtonOutline>
+                                {state.copySuccess ? 'Copied!' : 'Copy'}
+                              </ButtonOutline>
+                            </CopyToClipboard>
+                            {state.isTruncated && (
+                              <ButtonOutline
+                                disabled={state.isContinuing}
+                                onClick={() => handleContinueSectionLookml(section)}
+                              >
+                                {state.isContinuing ? 'Continuing...' : 'Continue'}
+                              </ButtonOutline>
+                            )}
+                          </Space>
+                        </>
+                      ) : null}
+                    </SpaceVertical>
+                  </Card>
+                ))}
+              </SpaceVertical>
+            </SpaceVertical>
+          </Card>
         )}
       </SpaceVertical>
     </Box>
   )
-} 
+}
+
+export default ExploreAnalyzer

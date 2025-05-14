@@ -21,7 +21,7 @@ LOOKER_SECRET_NAME = "looker_ini"
 LOOKER_SECRET_VERSION = "latest"
 VERTEX_PROJECT_ID = "joey-looker"
 VERTEX_LOCATION = "us-central1"
-GEMINI_MODEL_NAME = "gemini-2.5-pro-exp-03-25"
+GEMINI_MODEL_NAME = "gemini-2.5-flash-preview-04-17"
 API_CALL_DELAY = 1
 TOP_N_FIELDS = 15
 AGENT_INSTRUCTION_TOP_FIELDS = 5
@@ -381,7 +381,7 @@ def analyze_lookml(explore_name, model_name=None, user_description=None, common_
             "hidden": explore_details.hidden,
             "group_label": explore_details.group_label,
             "view_name": explore_details.view_name,
-            "joins": [{"name": j.name, "type": j.type, "relationship": j.relationship, "sql_on": j.sql_on} for j in explore_details.joins] if explore_details.joins else [],
+            "joins": [{"name": j.name, "type": j.type, "relationship": j.relationship, "sql_on": j.sql_on, "from": getattr(j, 'from_', None)} for j in explore_details.joins] if explore_details.joins else [],
             "fields": {
                 "dimensions": [{"name": f.name, "label": f.label, "description": f.description} for f in explore_details.fields.dimensions] if explore_details.fields.dimensions else [],
                 "measures": [{"name": f.name, "label": f.label, "description": f.description} for f in explore_details.fields.measures] if explore_details.fields.measures else [],
@@ -389,6 +389,8 @@ def analyze_lookml(explore_name, model_name=None, user_description=None, common_
             }
         }
         explore_definition_json = json.dumps(explore_dict)
+        # Log the full explore_dict for debugging
+        print("DEBUG: Looker explore_dict:", json.dumps(explore_dict, indent=2))
         
         # Get field usage history
         history_scores = fetch_and_process_history(sdk, SOURCE_WEIGHTS, DEFAULT_WEIGHT)
@@ -453,10 +455,13 @@ def analyze_lookml(explore_name, model_name=None, user_description=None, common_
         return result
         
     except Exception as e:
-        return {
+        # Always return raw_analysis if possible
+        error_result = {
             "status": "error",
-            "error": str(e)
+            "error": str(e),
+            "raw_analysis": None
         }
+        return error_result
 
 def summarize_recommendations_with_gemini(gemini_model, recommendations):
     prompt = (
@@ -534,7 +539,7 @@ def generate_ca_lookml():
     # For view generation, only send weighted fields that belong to that view
     if section.lower() != 'explore':
         filtered_fields = [f for f in filtered_fields if f[0].lower().startswith(section.lower() + '.')]
-        use_extends = True  # Always generate as extends for views
+        use_extends = False  # Use refinement for views
 
     if is_continue and previous_prompt and previous_output:
         last_lines = '\n'.join(previous_output.strip().split('\n')[-30:])
@@ -559,12 +564,12 @@ Weighted Fields (most important first): {filtered_fields}
 Summarized Recommendations:\n"""
         else:
             prompt = f"""
-You are an expert LookML developer. Generate an extends view for '{section}' in model '{model_name}', including ONLY the relevant fields below. Implement as many of the summarized recommendations as possible for Conversational Analytics readiness. Use the weighted fields to prioritize which fields to improve. Use the user context to inform labels and descriptions.
+You are an expert LookML developer. Generate a refinement block for the view '{section}' in model '{model_name}', including ONLY the relevant fields below. Implement as many of the summarized recommendations as possible for Conversational Analytics readiness. Use the weighted fields to prioritize which fields to improve. Use the user context to inform labels and descriptions.
 
 IMPORTANT RULES:
 1. Keep all synonyms within the description parameter, do not add a separate synonym parameter
-2. Only include the relevant fields listed below in the extends view
-3. Output only the LookML code for the extends view, ready to copy/paste into a LookML project.
+2. Only include the relevant fields listed below in the refinement
+3. Output only the LookML code for the refinement, ready to copy/paste into a LookML project.
 
 User Description: {user_description}
 Common Questions: {common_questions}
@@ -577,7 +582,10 @@ Summarized Recommendations:\n"""
             prompt += f"- {rec}\n"
         if relevant_lookml_suggestions:
             prompt += f"\nRelevant LookML Suggestions:\n{relevant_lookml_suggestions}\n"
-        prompt += "\nGenerate only the LookML code for this extends view. Do not include other views or explores."
+        if section.lower() == 'explore':
+            prompt += "\nGenerate only the LookML code for this extends explore. Do not include other views or explores."
+        else:
+            prompt += "\nGenerate only the LookML code for this refinement. Do not include other views or explores."
 
     lookml_code = analyze_with_gemini(gemini_model, prompt, model_name, explore_name)
 

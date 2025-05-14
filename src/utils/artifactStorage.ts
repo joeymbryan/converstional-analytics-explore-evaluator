@@ -29,16 +29,42 @@ export class ArtifactStorage {
 
   async saveAnalysisResult(exploreName: string, result: any): Promise<void> {
     try {
-      // Save the result with explore name as key
+      const key = `explore_analysis_${exploreName}`
+      let version: string | undefined = undefined
+      // Try to fetch the current artifact to get its version
+      try {
+        // @ts-ignore: Looker SDK type mismatch
+        const current = await this.sdk.ok(
+          this.sdk.artifact({
+            key,
+            namespace: this.namespace
+          })
+        )
+        // Debug log: print the current artifact object and version
+        // eslint-disable-next-line no-console
+        console.log('DEBUG: current artifact object:', current)
+        if (Array.isArray(current) && current.length > 0 && 'version' in current[0]) {
+          // eslint-disable-next-line no-console
+          console.log('DEBUG: extracted version:', current[0].version)
+          version = current[0].version !== undefined ? String(current[0].version) : undefined
+        } else if (current && typeof current === 'object' && 'version' in current) {
+          // eslint-disable-next-line no-console
+          console.log('DEBUG: extracted version:', current.version)
+          version = (current as any).version !== undefined ? String((current as any).version) : undefined
+        }
+      } catch (err) {
+        // If not found, that's fine (new artifact)
+      }
       // @ts-ignore: Looker SDK type mismatch
       await this.sdk.ok(
         this.sdk.update_artifacts(
           this.namespace,
           [
             {
-              key: `explore_analysis_${exploreName}`,
+              key,
               value: JSON.stringify(result),
-              content_type: 'application/json'
+              content_type: 'application/json',
+              ...(version ? { version: Number(version) } : {})
             }
           ]
         )
